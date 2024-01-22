@@ -4,7 +4,7 @@
  * `.ctxMenu`, `.ctxMenuItem`, and `.ctxMenuDivider`
  */
 var ctxMenus = (() => {
-    
+
     /***********************************************/
     /*   Global state variables are defined here   */
     /***********************************************/
@@ -12,11 +12,12 @@ var ctxMenus = (() => {
     let __debug = true;
     let activeMenus = [];
     let submenuTimer = null;
+    let rootMenu = null;
 
     /**********************************************/
     /*       End of global state variables        */
     /**********************************************/
-    
+
     /* Let's make sure our context menus are closed when someone clicks outside of it. */
     window.addEventListener('mousedown', (e) => {
 
@@ -52,7 +53,7 @@ var ctxMenus = (() => {
             console.log("[*] Context Menu debug: " + str);
         }
     }
-    
+
     function recursivelyCloseChildren(ctxMenu) {
         let activeSubmenu = ctxMenu.__ctxMenu.activeSubmenu
         if (activeSubmenu) {
@@ -64,16 +65,11 @@ var ctxMenus = (() => {
     /**
      * Creates a context menu HTML div element and returns it by reference.
      * @param {[{text: string, click: Function | Object, divider: boolean}]} menuObject The object literal that represents your context menu structure. See the docs for an example.
-     * @param {{styles: { ctxMenu: Object, ctxMenuItem: Object, ctxMenuDivider: Object}}} options An object literal with keys that change the behavior or appearance of your context menu.
+     * @param {{}} options An object literal with keys that change the behavior or appearance of your context menu.
      * @param {HTMLDivElement | null} parent Don't pass anything in here unless you know what you're doing, just leave this blank :)
      * @returns {HTMLDivElement}
      */
-    function createContextMenu(menuObject = [{ text: '', click: () => { } }], options = { styles: { ctxMenu: {}, ctxMenuItem: {}, ctxMenuDivider: {} }, position: {x: 0, y: 0} }, parent = null) {
-        
-        // Are we spawning the root context menu? If so, close all the other context menus.
-        if (parent == null) {
-            removeAll();
-        }
+    function createContextMenu(menuObject = [{ text: '', click: () => { } }], options = { styles: { ctxMenu: {}, ctxMenuItem: {}, ctxMenuDivider: {} }, position: { x: 0, y: 0 } }, parent = null) {
 
         debug('Creating context menu...');
 
@@ -91,12 +87,12 @@ var ctxMenus = (() => {
             /** The raw menu object passed in by the user. */
             menuObject: menuObject
         }
-        
+
         // setting a border just for debug/testing :) ignore this
         if (__debug) {
             ctxMenu.style.borderStyle = 'solid';
         }
-        
+
         ctxMenu.style.position = 'absolute';
 
         ctxMenu.classList.add('ctxMenu');
@@ -105,7 +101,7 @@ var ctxMenus = (() => {
         createCtxMenuItems();
 
         let optPosition = options.position;
-        
+
         if (optPosition) {
             let x = options.position.x;
             let y = options.position.y;
@@ -125,9 +121,15 @@ var ctxMenus = (() => {
 
         debug('Returning new context menu ...');
 
+        if (parent == null) {
+            removeAll();
+            rootMenu = ctxMenu;
+        }
+
         activeMenus.push(ctxMenu);
+
         return ctxMenu;
-        
+
         /**
          * Creates the submenu items and appends them to the current context menu being created.
          */
@@ -138,6 +140,7 @@ var ctxMenus = (() => {
             *  where `click` should either be a function or a submenu object literal. 
             */
             for (let item of menuObject) {
+                console.log(item);
                 ctxMenu.appendChild(createCtxMenuItem(item));
             }
         }
@@ -152,10 +155,11 @@ var ctxMenus = (() => {
             /* If it has a `divider` key, it must be a divider element. */
             if (itemObj.divider) {
                 let divider = document.createElement('hr');
-                
+
                 divider.classList.add('ctxMenuDivider');
                 tryApplyUserStyles(divider, 'divider');
 
+                debug('Returning DIVIDER (<hr>) menu item ...');
                 return divider;
             }
 
@@ -171,7 +175,7 @@ var ctxMenus = (() => {
             } else {
                 enabled = true;
             }
-            
+
             let ctxMenuItem = document.createElement('div');
             ctxMenuItem.textContent = text;
             ctxMenuItem.style.userSelect = 'none';
@@ -184,11 +188,11 @@ var ctxMenus = (() => {
                 divider: itemObj.divider || null,
             }
 
-            
+
             ctxMenuItem.addEventListener('mouseenter', onMouseEntered);
             ctxMenuItem.addEventListener('mouseleave', resetHoverTimer);
             ctxMenuItem.addEventListener('click', onClick);
-            
+
             ctxMenuItem.classList.add('ctxMenuItem');
             tryApplyUserStyles(ctxMenuItem, 'ctxMenuItem');
 
@@ -199,14 +203,15 @@ var ctxMenus = (() => {
             function onMouseEntered(e) {
                 if (submenuTimer) resetHoverTimer();
 
-                submenuTimer = setTimeout( () => {
+                submenuTimer = setTimeout(() => {
                     let bounds = ctxMenuItem.getBoundingClientRect();
                     let [mouseX, mouseY] = [e.clientX, e.clientY];
                     let [top, left, right, bottom] = [bounds.top, bounds.left, bounds.right, bounds.bottom];
 
                     if (!(mouseX < left || mouseX > right || mouseY < top || mouseY > bottom)) {
-                        if (typeof(clickObject) === 'object') {
-                            spawnSubmenu(clickObject, bounds.left + bounds.width, bounds.top);
+                        if (typeof (clickObject) === 'object') {
+                            debug('Creating submenu ...');
+                            render(clickObject, ctxMenuItem, bounds.left + bounds.width, bounds.top);
                         } else {
                             if (submenuTimer) resetHoverTimer();
                         }
@@ -226,14 +231,19 @@ var ctxMenus = (() => {
                     if (submenuTimer) resetHoverTimer();
 
                     // TODO: Allow the user to pass in their own parameters, and reference those here when calling the function.
+
                     removeAll();
                     itemObj.click();
                     return;
                 }
                 /* this menu item opens a submenu when hovered or clicked */
                 if (typeof (itemObj.click === 'object')) {
+                    let bounds = ctxMenuItem.getBoundingClientRect();
+                    let [mouseX, mouseY] = [e.clientX, e.clientY];
+                    let [top, left, right, bottom] = [bounds.top, bounds.left, bounds.right, bounds.bottom];
+
                     resetHoverTimer();
-                    spawnSubmenu();
+                    spawnSubmenu(clickObject, ctxMenuItem, bounds.left + bounds.width, bounds.top);
                     return;
                 }
 
@@ -245,7 +255,9 @@ var ctxMenus = (() => {
              * @return {HTMLDivElement}
              */
             function spawnSubmenu(menuObject, appendElement, x, y) {
-                ctxMenu.__ctxMenu.activeSubmenu = createContextMenu(appendElement, x, y, menuObject, options, ctxMenu);
+                let newSubmenu = createContextMenu(menuObject, x, y, menuObject, options, ctxMenu);
+                ctxMenu.__ctxMenu.activeSubmenu = newSubmenu;
+                appendElement.appendChild(newSubmenu);
             }
 
             /**
@@ -269,37 +281,6 @@ var ctxMenus = (() => {
                 }
             }
         }
-
-
-        /** ################################################################################################
-         *  # This only serves to show you, the curious developer that is                                  #
-         *  # currently reading this instead of the API docs, what a valid `menuObject` could look like.   #
-         *  ################################################################################################ */
-
-        let __exampleCtxMenu = (() => {
-            const _exampleMenuObject = [{
-                text: "Option 1",
-                click: () => {
-                    console.log('You clicked the first context menu option.');
-                }
-            },
-            {
-                text: "Option 2",
-                click: () => {
-                    console.log('You clicked the second context menu option.');
-                },
-                disabled: true
-            },
-            {
-                text: "Option 3",
-                click: [{
-                    text: "Submenu Option 1",
-                    click: () => {
-                        console.log("You clicked the first submenu option!")
-                    }
-                }]
-            }];
-        });
     }
 
     /**
@@ -310,12 +291,91 @@ var ctxMenus = (() => {
         for (let menu of activeMenus) {
             menu.remove();
         }
+
+        rootMenu = null;
+    }
+
+    function calculateOverflow(rect, viewportRect) {
+        const overflow = {
+            top: Math.max(viewportRect.top - rect.top, 0),
+            right: Math.max(rect.right - viewportRect.right, 0),
+            bottom: Math.max(rect.bottom - viewportRect.bottom, 0),
+            left: Math.max(viewportRect.left - rect.left, 0)
+        };
+
+        return overflow;
+    }
+
+    /**
+     * Append the context menu div to the body, rendering the menu based on where available space exists relative to the viewport.
+     * @param {HTMLDivElement} contextMenuElement A context menu created with `ctxMenus.create()`
+     * @param {number} x The x coordinate at which to spawn the menu
+     * @param {number} y The y coordinate at which to spawn the menu
+     * @param {HTMLDivElement} parentMenuItemDiv The parent context menu item that spawns this menu - if any. Leave this alone if you don't know what you are doing.
+     */
+    function render(contextMenuElement, x, y, parentMenuItemDiv = null) {
+        
+        /* Render a fake, invisible dummy menu that we can sample the would-be rendered dimensions from. */
+        let dummyMenu = contextMenuElement.cloneNode(true);
+
+        dummyMenu.style.visibility = 'hidden';
+        dummyMenu.style.top = `${y}px`;
+        dummyMenu.style.left = `${x}px`;
+
+        document.body.appendChild(dummyMenu);
+
+        /* Let's calculate what direction would have the most overflow if we positioned the context menu there. */
+
+        if (parentMenuItemDiv) {
+            let itemDivBounds = parentMenuItemDiv.getBoundingClientRect();
+            let posTopLeft = { x: itemDivBounds.left, y: itemDivBounds.top };
+            let posBtmLeft = { x: itemDivBounds.left, y: itemDivBounds.bottom };
+            let posTopRight = { x: itemDivBounds.right, y: itemDivBounds.top };
+            let posBtmRight = { x: itemDivBounds.right, y: itemDivBounds.bottom };
+        } else {
+
+        }
+
+        let bounds = dummyMenu.getBoundingClientRect();
+        let viewportBounds = { top: 0, right: window.innerWidth, left: 0, bottom: window.innerHeight };
+        let overflow = calculateOverflow(bounds, viewportBounds);
+        
+        let calculatedLeft = bounds.left;
+        let calculatedTop = bounds.top;
+
+        /* Kill the dummy menu now that we have its post-css dimensions. */
+        dummyMenu.remove();
+
+        /* Choose the direction with the smallest overflowing rect */
+        if (overflow.top < overflow.bottom && overflow.top < overflow.left && overflow.top < overflow.right) {
+            calculatedTop = bounds.top - overflow.top - bounds.height;
+
+        } else if (overflow.right < overflow.bottom && overflow.right < overflow.left) {
+            calculatedLeft = bounds.left - overflow.right - bounds.width;
+
+        } else if (overflow.bottom < overflow.left) {
+            calculatedTop = bounds.top + overflow.bottom;
+
+        } else {
+            calculatedLeft = bounds.left + overflow.left;
+
+        }
+
+        /* Now, let's set the position of the real menu. */
+        let realMenu = contextMenuElement;
+        realMenu.style.top = calculatedTop;
+        realMenu.style.left = calculatedLeft;
+
+        /* Finally, append the real menu element to the body with the correct position. */
+        document.body.appendChild(realMenu);
+        
     }
 
     /* The public API that this module exposes. */
     return {
         create: createContextMenu,
-        removeAll: removeAll
+        removeAll: removeAll,
+        render: render
     }
 
-}) ();
+})();
